@@ -1,3 +1,8 @@
+var wemovTracker = {
+	loaded: false,
+	requestURL: null
+};
+
 customjsReady("time-tracker-recorder a span span", function(e) {	
 	gsap.registerPlugin(TextPlugin);
 	var watchForChange = document.querySelector("time-tracker-recorder a");
@@ -7,6 +12,15 @@ customjsReady("time-tracker-recorder a span span", function(e) {
 });
 
 async function getClockData() {
+
+	if ( wemovTracker.loaded ) {
+		wemov_checkHours(wemovTracker.requestURL);
+		wemovTracker = {
+			loaded: false,
+			requestURL: null
+		};
+	}
+
 	var errorCheck = false;
 
 	var curPerc = 0;
@@ -24,7 +38,7 @@ async function getClockData() {
 	}
 
 	if ( errorCheck != false ) {
-		makeAddon(curPerc, errorCheck, barColour, barColour);
+		wemov_makeAddon(curPerc, errorCheck, barColour, barColour);
 		return;
 	}
 
@@ -34,7 +48,7 @@ async function getClockData() {
 	if ( curProjectHTML == "Project" ) errorCheck = "Select a project."
 
 	if ( errorCheck != false ) {
-		makeAddon(curPerc, errorCheck, barColour, "#fff");
+		wemov_makeAddon(curPerc, errorCheck, barColour, "#fff");
 		return;
 	}
 
@@ -64,37 +78,15 @@ async function getClockData() {
 		});
 
 	var curProjectData = await curProjectInfo.json();
+	var curProjBudg = wemov_convertToHours(curProjectData[0].estimate.estimate);
+	var curProjHours = wemov_convertToHours(curProjectData[0].duration);
 
-	var curProjBudg = convertToHours(curProjectData[0].estimate.estimate);
-	var curProjHours = convertToHours(curProjectData[0].duration);
+	wemovTracker = {
+		loaded: true,
+		requestURL: projectRequest
+	};
 
-	if ( curProjBudg > 0 ) {
-		var ratio = curProjHours / curProjBudg;
-		var msg = "", flag = "";
-		if ( ratio >= 0.75 && ratio < 100 ) {
-			msg = "This project has passed 75% of the allocated hours.";
-			flag = "warning"
-		} else if ( ratio >= 100 && ratio < 150 ) {
-			msg = "This project has passed 100% of the allocated hours.";
-			flag = "over"
-		} else if ( ratio >= 200 ) {
-			msg = "This project has doubled the allocated hours.";
-			flag = "double"
-		}
-		if ( ratio >= 75 ) fetch("https://eoks8y6o64nzz36.m.pipedream.net", {
-			method: "POST",
-			body: JSON.stringify({
-				"project": curTrackProjNum,
-				"hours": curProjHours,
-				"budget": curProjBudg,
-				"ratio": ratio,
-				"msg": msg,
-				"flag": flag
-			})
-		});
-	}
-
-	
+	//wemov_checkHours(projectRequest);
 
 	curPerc = 0;
 	percTxt = "0%";
@@ -104,17 +96,8 @@ async function getClockData() {
 	percTxt = calcTxt(curProjBudg, curProjHours);
 	barColour = calcBar(curProjBudg, curProjHours);
 
-	makeAddon(curPerc, percTxt, barColour, "#fff");  
+	wemov_makeAddon(curPerc, percTxt, barColour, "#fff");  
 	//
-	function convertToHours(PTdata) {		
-		var hours = 0, minutes = 0, seconds = 0;
-
-		if ( (/(\d+)H/.test(PTdata)) == true ) hours = PTdata.match(/(\d+)H/)[1] * 1;
-		if ((/(\d+)M/.test(PTdata)) == true ) minutes = ( PTdata.match(/(\d+)M/)[1] * 1) / 60;
-		if ( (/(\d+)S/.test(PTdata)) == true ) seconds = ( PTdata.match(/(\d+)S/)[1] / 60 ) / 60;
-		
-		return Math.round(hours + minutes + seconds);
-	}
 
 	function calcPerc(budget, tracked) {
 		if ( budget <= 0 ) return 0;
@@ -144,7 +127,7 @@ async function getClockData() {
 	}
 }
 
-function makeAddon(curPerc, percTxt, barColour, bgColour) {
+function wemov_makeAddon(curPerc, percTxt, barColour, bgColour) {
 	var newRow = document.getElementById("WeMOV_clock");
 	var firstTime = false;
 	if ( newRow == null ) {
@@ -199,4 +182,58 @@ function makeAddon(curPerc, percTxt, barColour, bgColour) {
 	} else {
 		gsap.to("#WeMOV_clock-bar", {width: curPerc + "%", duration: 2, ease: "power1.out"});
 	}
+}
+
+async function wemov_checkHours(urlToCheck) {
+	var curProjectInfo = await fetch(urlToCheck, {
+			headers: {
+				"X-Api-Key": apiKey
+			}
+		});
+
+	var curProj = await curProjectInfo.json();
+	var budg = wemov_convertToHours(curProjectData[0].estimate.estimate);
+	var tracked = wemov_convertToHours(curProjectData[0].duration);
+
+
+	if ( budg > 0 ) {
+		var ratio = tracked / budg;
+		var msg = "", flag = "";
+		if ( ratio >= 0.75 && ratio < 1 ) {
+			msg = ":warning:   A project has passed 75% of its allocated hours:";
+			flag = "0"
+		} else if ( ratio >= 1 && ratio < 2 ) {
+			msg = ":rotating_light:  A project has exceeded 100% of its allocated hours  :rotating_light:";
+			flag = "1"
+		} else if ( ratio >= 2 ) {
+			msg = ":fire::fire::fire:  A project has DOUBLED (at least!) its allocated hours  :fire::fire::fire:";
+			flag = "2"
+		}
+		if ( ratio >= 0.75 ) {
+			var newBody = {
+					"project": curProj[0].name,
+					"link": "https://app.clockify.me/projects/" + curProj[0].id + "/edit/",
+					"hours": tracked,
+					"budget": budg,
+					"ratio": ratio,
+					"msg": msg,
+					"flag": flag
+				};
+			 fetch("https://eoks8y6o64nzz36.m.pipedream.net", {
+				method: "POST",
+				body: JSON.stringify(newBody)
+			});
+			 console.log(newBody);
+		}
+	}
+}
+
+function wemov_convertToHours(PTdata) {		
+	var hours = 0, minutes = 0, seconds = 0;
+
+	if ( (/(\d+)H/.test(PTdata)) == true ) hours = PTdata.match(/(\d+)H/)[1] * 1;
+	if ((/(\d+)M/.test(PTdata)) == true ) minutes = ( PTdata.match(/(\d+)M/)[1] * 1) / 60;
+	if ( (/(\d+)S/.test(PTdata)) == true ) seconds = ( PTdata.match(/(\d+)S/)[1] / 60 ) / 60;
+	
+	return Math.round(hours + minutes + seconds);
 }

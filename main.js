@@ -70,7 +70,7 @@ async function getClockData() {
 
 	if ( curProjBudg > 0 ) {
 		var ratio = curProjHours / curProjBudg;
-		var msg = "", flag: "";
+		var msg = "", flag = "";
 		if ( ratio >= 0.75 && ratio < 100 ) {
 			msg = "This project has passed 75% of the allocated hours.";
 			flag = "warning"
